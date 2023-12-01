@@ -3,12 +3,10 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
-	"log"
 	"net/http"
 	"time"
 
-	_ "github.com/denisenkom/go-mssqldb"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type TimeResponse struct {
@@ -22,7 +20,7 @@ func main() {
 
 func timeHandler(w http.ResponseWriter, r *http.Request) {
 	torontoTime := getCurrentTorontoTime()
-	saveTimeToDatabase(torontoTime)
+	//saveTimeToDatabase(torontoTime)
 
 	response := TimeResponse{TorontoTime: torontoTime.Format(time.RFC3339)}
 	json.NewEncoder(w).Encode(response)
@@ -34,32 +32,19 @@ func getCurrentTorontoTime() time.Time {
 }
 
 func saveTimeToDatabase(time time.Time) {
-	// Replace the placeholders with your SQL Server details
-	server := "NARVEER-SAHARAN\\SQLEXPRESS"
-	port := 1433
-	user := "sa"
-	password := "narveer"
-	database := "chandigarhTime"
-
-	// Build the connection string
-	connString := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%d;database=%s;",
-		server, user, password, port, database)
-
-	// Open a connection to the database
-	db, err := sql.Open("sqlserver", connString)
+	db, err := sql.Open("sqlite3", "./database.db")
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	defer db.Close()
-	// _, err = db.Exec("INSERT INTO time_table (time) VALUES (?)", time)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// Check the connection
-	_, err = db.Exec("INSERT INTO time_table (time) VALUES (?)", time)
+
+	_, err = db.Exec("CREATE TABLE IF NOT EXISTS time_table (id INTEGER PRIMARY KEY AUTOINCREMENT, time DATETIME)")
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
-	fmt.Println("Connected to the SQL Server database.")
+	_, err = db.Exec("INSERT INTO time_table (time) VALUES (?)", time)
+	if err != nil {
+		panic(err)
+	}
 }

@@ -1,97 +1,86 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
-	"fmt"
-	"log"
 	"net/http"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
+	_ "github.com/go-sql-driver/mysql"
 )
 
-const dbPath = "mydatabase.db"
-
-// TimeLog represents the structure of the time_log table
-type TimeLog struct {
-	ID        uint      `gorm:"primaryKey"`
-	Timestamp time.Time `gorm:"column:timestamp"`
-}
-
-// TimeResponse represents the response structure
 type TimeResponse struct {
-	CurrentTime string `json:"current_time"`
+	TorontoTime string `json:"toronto_time"`
 }
 
-var db *gorm.DB
-
-func init() {
-	// Initialize the database connection with gorm for SQLite3
-	var err error
-	db, err = gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
-	if err != nil {
-		log.Fatal("Error opening database connection:", err)
-	}
-
-	// Auto migrate the TimeLog struct to the database
-	if err := db.AutoMigrate(&TimeLog{}); err != nil {
-		log.Fatal("Error auto migrating tables:", err)
-	}
-
-	// Check if the database connection is successful
-	sqlDB, err := db.DB()
-	if err != nil {
-		log.Fatal("Error getting DB instance:", err)
-	}
-	if err = sqlDB.Ping(); err != nil {
-		log.Fatal("Error connecting to the database:", err)
-	}
-}
-
-func getTime(w http.ResponseWriter, r *http.Request) {
-	// Set the timezone to Toronto
-	loc, err := time.LoadLocation("America/Toronto")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		log.Printf("Error loading time zone: %v", err)
-		return
-	}
-
-	// Get the current time in Toronto
-	currentTime := time.Now().In(loc)
-
-	// Save the current time to the database using gorm
-	timeLog := TimeLog{Timestamp: currentTime}
-	if err := db.Create(&timeLog).Error; err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		log.Printf("Error inserting time into the database: %v", err)
-		return
-	}
-
-	// Create a response struct
-	response := TimeResponse{
-		CurrentTime: currentTime.Format("2006-01-02 15:04:05"),
-	}
-
-	// Set the content type to JSON
-	w.Header().Set("Content-Type", "application/json")
-
-	// Encode the struct to JSON and write the response
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		log.Printf("Error encoding JSON response: %v", err)
-	}
+type AllTimesResponse struct {
+	AllTimes []string `json:"all_times"`
 }
 
 func main() {
-	http.HandleFunc("/time", getTime)
-	port := ":7575"
-	fmt.Printf("Server is running on port %s\n", port)
+	http.HandleFunc("/time", timeHandler)
+	http.HandleFunc("/all-times", allTimesHandler)
+	http.ListenAndServe(":8585", nil)
+}
 
-	// Start the server
-	if err := http.ListenAndServe(port, nil); err != nil {
-		log.Fatalf("Error starting the server: %v", err)
+func timeHandler(w http.ResponseWriter, r *http.Request) {
+	torontoTime := getCurrentTorontoTime()
+	saveTimeToDatabase(torontoTime)
+
+	response := TimeResponse{TorontoTime: torontoTime.Format(time.RFC3339)}
+	json.NewEncoder(w).Encode(response)
+}
+
+func allTimesHandler(w http.ResponseWriter, r *http.Request) {
+	allTimes := getAllLoggedTimesFromDatabase()
+
+	response := AllTimesResponse{AllTimes: allTimes}
+	json.NewEncoder(w).Encode(response)
+}
+
+func getCurrentTorontoTime() time.Time {
+	loc, _ := time.LoadLocation("America/Toronto")
+	return time.Now().In(loc)
+}
+
+func saveTimeToDatabase(time time.Time) {
+	db, err := sql.Open("mysql", "root:narveer@/torontotime")
+	if err != nil {
+		panic(err)
 	}
+	defer db.Close()
+
+	_, err = db.Exec("INSERT INTO time_table (time) VALUES (?)", time)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func getAllLoggedTimesFromDatabase() []string {
+	db, err := sql.Open("mysql", "root:narveer@/torontotime")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	rows, err := db.Query("SELECT time FROM time_table")
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+
+	var allTimes []string
+	for rows.Next() {
+		var timeString string
+		if err := rows.Scan(&timeString); err != nil {
+			panic(err)
+		}
+		allTimes = append(allTimes, timeString)
+	}
+
+	if err := rows.Err(); err != nil {
+		panic(err)
+	}
+
+	return allTimes
 }

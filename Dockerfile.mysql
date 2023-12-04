@@ -1,0 +1,10 @@
+FROM mysql:latest
+
+# Set the MySQL root password (change it to a secure password)
+ENV MYSQL_ROOT_PASSWORD=narveer
+
+# Set the database name
+ENV MYSQL_DATABASE=torontotime
+
+# Copy the SQL script to initialize the database
+COPY init.sql /docker-entrypoint-initdb.d/
